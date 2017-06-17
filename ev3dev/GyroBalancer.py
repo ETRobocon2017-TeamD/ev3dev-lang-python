@@ -200,7 +200,7 @@ class GyroBalancer(Tank):
             ########################################################################
 
             # Timing settings for the program
-            loopTimeMilliSec        = 10                       # Time of each loop, measured in miliseconds.
+            loopTimeMilliSec        = 15                       # Time of each loop, measured in miliseconds.
             loopTimeSec             = loopTimeMilliSec/1000.0  # Time of each loop, measured in seconds.
             motorAngleHistoryLength = 3                        # Number of previous motor angles we keep track of.
 
@@ -232,8 +232,8 @@ class GyroBalancer(Tank):
             battery_gain = 0.001089  # PWM出力算出用バッテリ電圧補正係数
             battery_offset = 0.625  # PWM出力算出用バッテリ電圧補正オフセット
 
-            a_d = 0.47  # ローパスフィルタ係数(左右車輪の平均回転角度用)
-            a_r = 0.98  # ローパスフィルタ係数(左右車輪の目標平均回転角度用)
+            a_d = 1.0 - 0.51 #0.39 #0.47  # ローパスフィルタ係数(左右車輪の平均回転角度用)
+            a_r = 0.985 #0.98  # ローパスフィルタ係数(左右車輪の目標平均回転角度用)
 
             # Variables representing physical signals (more info on these in the docs)
             # The angle of "the motor", measured in raw units (degrees for the
@@ -243,6 +243,9 @@ class GyroBalancer(Tank):
 
             # The angle of the motor, converted to radians (2*pi radians equals 360 degrees).
             motorAngle                 = 0
+
+            # 1ループ前に算出した左右車輪回転角度
+            motorAngleLast             = 0
 
             # The reference angle of the motor. The robot will attempt to drive
             # forward or backward, such that its measured position equals this
@@ -288,7 +291,7 @@ class GyroBalancer(Tank):
             voltageRaw = 0
 
             # ログ記録用
-            logs = [0 for _ in range(500)]
+            logs = ["" for _ in range(10000)]
             log_pointer = 0
 
             # filehandles for fast reads/writes
@@ -335,8 +338,9 @@ class GyroBalancer(Tank):
             # Initial touch sensor value
             touchSensorPressed = FastRead(touchSensorValueRaw)
 
-            # while not touchSensorPressed:
-            for _ in range(500):
+            #while not touchSensorPressed:
+            while ( gyroRate < 4 ):
+            #for _ in range(1000):
 
                 ###############################################################
                 ##  Loop info
@@ -352,25 +356,27 @@ class GyroBalancer(Tank):
                 ##  Reading the Gyro.
                 ###############################################################
                 gyroRateRaw = FastRead(gyroSensorValueRaw)
-                gyroRate = (gyroRateRaw - gyroOffset)*radiansPerSecondPerRawGyroUnit # 躯体の角速度(rad/sec)。ジャイロから得た角速度をオフセット値で調整している
+                gyroRate = (gyroRateRaw - gyroOffset) * radiansPerSecondPerRawGyroUnit # 躯体の角速度(rad/sec)。ジャイロから得た角速度をオフセット値で調整している
 
                 ###############################################################
                 ##  Reading the Motor Position
                 ###############################################################
-                motorAngleRaw = (FastRead(motorEncoderLeft) + FastRead(motorEncoderRight))/2
-                motorAngle = motorAngleRaw*radiansPerRawMotorUnit + gyroEstimatedAngle # 左右モーターの現在の平均回転角度(rad) + 躯体の(推定)回転角度
+                motorAngleLast = motorAngle
+                motorAngleRaw = (FastRead(motorEncoderLeft) + FastRead(motorEncoderRight))/2.0
+                motorAngle = (motorAngleRaw * radiansPerRawMotorUnit) + gyroEstimatedAngle # 左右モーターの現在の平均回転角度(rad) + 躯体の(推定)回転角度
 
                 motorAngularSpeedReference = self.speed * radPerSecPerPercentSpeed # 左右モーターの目標平均回転角速度(rad/sec)。入力値speedを角速度(rad)に変換したもの。
-                motorAngleReference = motorAngleReference + motorAngularSpeedReference * loopTimeSec # 左右モーターの目標平均回転角度(rad)。初期値は0になる。入力値speedがずっと0でも0になる
+                motorAngleReference = motorAngleReference + (motorAngularSpeedReference * loopTimeSec) # 左右モーターの目標平均回転角度(rad)。初期値は0になる。入力値speedがずっと0でも0になる
 
                 motorAngleError = motorAngle - motorAngleReference # 左右モーターの現在の平均回転角度と目標平均回転角度との誤差(rad)
 
                 ###############################################################
                 ##  Computing Motor Speed
                 ###############################################################
-                motorAngularSpeed = (motorAngle - motorAngleHistory[0])/(motorAngleHistoryLength * loopTimeSec) # 左右モーターの平均回転角速度(rad/sec)。３代前の左右モーターの平均回転角度と現在の平均回転角度の差分を、周期*3で割ったもの
+                #motorAngularSpeed = (motorAngle - motorAngleHistory[0])/(motorAngleHistoryLength * loopTimeSec) # 左右モーターの平均回転角速度(rad/sec)。３代前の左右モーターの平均回転角度と現在の平均回転角度の差分を、周期*3で割ったもの
+                motorAngularSpeed = (((1.0 - a_d) * motorAngle) + (a_d * motorAngleLast) - motorAngleLast) / loopTimeSec # ローパスフィルター係数を利用
                 motorAngularSpeedError = motorAngularSpeed - motorAngularSpeedReference # 左右モーターの現在の平均回転角速度と目標平均回転角速度との誤差(rad/sec)
-                motorAngleHistory.append(motorAngle) # 左右モーターの現在の平均回転角度を記録
+                #motorAngleHistory.append(motorAngle) # 左右モーターの現在の平均回転角度を記録
 
                 ###############################################################
                 ##  Reading the Voltage.
@@ -380,11 +386,11 @@ class GyroBalancer(Tank):
                 ###############################################################
                 ##  Computing the motor duty cycle value
                 ###############################################################
-                motorDutyCycle =((gainGyroAngle  * gyroEstimatedAngle
-                               + gainGyroRate   * gyroRate
-                               + gainMotorAngle * motorAngleError
-                               + gainMotorAngularSpeed * motorAngularSpeedError
-                               + gainMotorAngleErrorAccumulated * motorAngleErrorAccumulated)/
+                motorDutyCycle =(((gainGyroAngle  * gyroEstimatedAngle)
+                               + (gainGyroRate   * gyroRate)
+                               + (gainMotorAngle * motorAngleError)
+                               + (gainMotorAngularSpeed * motorAngularSpeedError)
+                               + (gainMotorAngleErrorAccumulated * motorAngleErrorAccumulated))/
                                 (battery_gain * voltageRaw - battery_offset)) * 100000
 
                 # motorDutyCycle =(gainGyroAngle  * gyroEstimatedAngle
@@ -402,21 +408,21 @@ class GyroBalancer(Tank):
                 ###############################################################
                 ##  Update angle estimate and Gyro Offset Estimate
                 ###############################################################
-                gyroEstimatedAngle = gyroEstimatedAngle + gyroRate * loopTimeSec # 次回の躯体の（推定）回転角度(rad)
-                gyroOffset = (1 - gyroDriftCompensationRate) * gyroOffset + gyroDriftCompensationRate * gyroRateRaw # ジャイロの角速度を補正するオフセット値の更新。(rad/sec) ほぼほぼ前回算出したオフセット値寄りになる
+                gyroEstimatedAngle = gyroEstimatedAngle + (gyroRate * loopTimeSec) # 次回の躯体の（推定）回転角度(rad)
+                gyroOffset = ((1 - gyroDriftCompensationRate) * gyroOffset) + (gyroDriftCompensationRate * gyroRateRaw) # ジャイロの角速度を補正するオフセット値の更新。(rad/sec) ほぼほぼ前回算出したオフセット値寄りになる
 
                 ###############################################################
                 ##  Update Accumulated Motor Error
                 ###############################################################
-                motorAngleErrorAccumulated = motorAngleErrorAccumulated + motorAngleError * loopTimeSec # モーター角度誤差累積(rad*t) もしかして積分？ 前回の累積に、今回の目標平均回転角度との誤差を周期でかけたものを足している
+                motorAngleErrorAccumulated = motorAngleErrorAccumulated + (motorAngleError * loopTimeSec) # モーター角度誤差累積(rad*t) もしかして積分？ 前回の累積に、今回の目標平均回転角度との誤差を周期でかけたものを足している
 
                 ###############################################################
                 ##  Read the touch sensor (the kill switch)
                 ###############################################################
-                # touchSensorPressed = FastRead(touchSensorValueRaw)
+                #touchSensorPressed = FastRead(touchSensorValueRaw)
 
                 # 実行時間をログに出力
-                logs[log_pointer] = time.clock() - tLoopStart
+                logs[log_pointer] = "%s, %s, %s, %s" % ((time.clock() - tLoopStart), motorAngleError, motorAngularSpeedError, motorAngleErrorAccumulated)
                 log_pointer += 1
 
                 ###############################################################
@@ -426,7 +432,9 @@ class GyroBalancer(Tank):
                     time.sleep(0.0001)
 
             shutdown()
-            print('\n'.join([str(log_) for log_ in logs]))
+            for log_ in logs:
+                if log_ != "":
+                    print(str(log_))
 
         # Exit cleanly so that all motors are stopped
         except (KeyboardInterrupt, Exception) as e:
