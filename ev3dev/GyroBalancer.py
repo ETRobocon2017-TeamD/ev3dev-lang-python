@@ -90,6 +90,7 @@ class GyroBalancer(Tank):
         self.gyro = GyroSensor()
         self.gyro.mode = self.gyro.MODE_GYRO_RATE
         self.touch = TouchSensor()
+        self.battery = PowerSupply()
         # self.remote = RemoteControl(channel=1)
 
         # if not self.remote.connected:
@@ -181,6 +182,7 @@ class GyroBalancer(Tank):
         def shutdown():
             touchSensorValueRaw.close()
             gyroSensorValueRaw.close()
+            batteryVoltageRaw.close()
             motorEncoderLeft.close()
             motorEncoderRight.close()
             motorDutyCycleLeft.close()
@@ -229,6 +231,9 @@ class GyroBalancer(Tank):
 
             battery_gain = 0.001089  # PWM出力算出用バッテリ電圧補正係数
             battery_offset = 0.625  # PWM出力算出用バッテリ電圧補正オフセット
+
+            a_d = 0.47  # ローパスフィルタ係数(左右車輪の平均回転角度用)
+            a_r = 0.98  # ローパスフィルタ係数(左右車輪の目標平均回転角度用)
 
             # Variables representing physical signals (more info on these in the docs)
             # The angle of "the motor", measured in raw units (degrees for the
@@ -279,14 +284,18 @@ class GyroBalancer(Tank):
             # it is moving even when it is perfectly still. We keep track of this offset.
             gyroOffset                 = 0
 
+            # 現在のバッテリー電圧
+            voltageRaw = 0
+
             # ログ記録用
-            logs = [0 for _ in range(200)]
+            logs = [0 for _ in range(500)]
             log_pointer = 0
 
             # filehandles for fast reads/writes
             # =================================
             touchSensorValueRaw = open(self.touch._path + "/value0", "rb")
             gyroSensorValueRaw  = open(self.gyro._path + "/value0", "rb")
+            batteryVoltageRaw = open(self.battery._path + "/voltage_now", "rb")
 
             # Open motor files for (fast) reading
             motorEncoderLeft    = open(self.left_motor._path + "/position", "rb")
@@ -327,7 +336,7 @@ class GyroBalancer(Tank):
             touchSensorPressed = FastRead(touchSensorValueRaw)
 
             # while not touchSensorPressed:
-            for _ in range(200):
+            for _ in range(500):
 
                 ###############################################################
                 ##  Loop info
@@ -349,7 +358,7 @@ class GyroBalancer(Tank):
                 ##  Reading the Motor Position
                 ###############################################################
                 motorAngleRaw = (FastRead(motorEncoderLeft) + FastRead(motorEncoderRight))/2
-                motorAngle = motorAngleRaw*radiansPerRawMotorUnit # 左右モーターの現在の平均回転角度(rad)
+                motorAngle = motorAngleRaw*radiansPerRawMotorUnit + gyroEstimatedAngle # 左右モーターの現在の平均回転角度(rad) + 躯体の(推定)回転角度
 
                 motorAngularSpeedReference = self.speed * radPerSecPerPercentSpeed # 左右モーターの目標平均回転角速度(rad/sec)。入力値speedを角速度(rad)に変換したもの。
                 motorAngleReference = motorAngleReference + motorAngularSpeedReference * loopTimeSec # 左右モーターの目標平均回転角度(rad)。初期値は0になる。入力値speedがずっと0でも0になる
@@ -364,13 +373,25 @@ class GyroBalancer(Tank):
                 motorAngleHistory.append(motorAngle) # 左右モーターの現在の平均回転角度を記録
 
                 ###############################################################
+                ##  Reading the Voltage.
+                ###############################################################
+                voltageRaw = FastRead(batteryVoltageRaw)
+
+                ###############################################################
                 ##  Computing the motor duty cycle value
                 ###############################################################
-                motorDutyCycle =(gainGyroAngle  * gyroEstimatedAngle
+                motorDutyCycle =((gainGyroAngle  * gyroEstimatedAngle
                                + gainGyroRate   * gyroRate
                                + gainMotorAngle * motorAngleError
                                + gainMotorAngularSpeed * motorAngularSpeedError
-                               + gainMotorAngleErrorAccumulated * motorAngleErrorAccumulated)
+                               + gainMotorAngleErrorAccumulated * motorAngleErrorAccumulated)/
+                                (battery_gain * voltageRaw - battery_offset)) * 100000
+
+                # motorDutyCycle =(gainGyroAngle  * gyroEstimatedAngle
+                #                + gainGyroRate   * gyroRate
+                #                + gainMotorAngle * motorAngleError
+                #                + gainMotorAngularSpeed * motorAngularSpeedError
+                #                + gainMotorAngleErrorAccumulated * motorAngleErrorAccumulated)
 
                 ###############################################################
                 ##  Apply the signal to the motor, and add steering
