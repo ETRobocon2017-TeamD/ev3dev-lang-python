@@ -11,11 +11,11 @@ class BALANC3R(GyroBalancer):
     """
     def __init__(self):
         GyroBalancer.__init__(self, # 1にした, デジタルにした, , ...
-                              gainGyroAngle=30.2153, #39.7164, #31.9978, #900, # K_F[1]
-                              gainGyroRate=3.3269, #4.0376, #2.78873, #110, # K_F[3]
-                              gainMotorAngle=0.1606, #0.8432, #0.870303, #9, # K_F[0]
-                              gainMotorAngularSpeed=1.0796 * 0.85, #1.124 * 0.85, #6, # K_F[2]
-                              gainMotorAngleErrorAccumulated=0.0224) #0.44721) #3) # K_I
+                              gainGyroAngle=39.7164, #31.9978, #900, # K_F[1]
+                              gainGyroRate=4.0376, #2.78873, #110, # K_F[3]
+                              gainMotorAngle=0.8432, #0.870303, #9, # K_F[0]
+                              gainMotorAngularSpeed=1.124 * 0.85, #6, # K_F[2]
+                              gainMotorAngleErrorAccumulated=0.44721) #3) # K_I
 
 
 if __name__ == '__main__':
