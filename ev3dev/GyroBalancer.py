@@ -216,7 +216,7 @@ class GyroBalancer(Tank):
             degPerSecPerPercentSpeed       = RPMperPerPercentSpeed*360/60                  # Convert this number to the speed in deg/s per "percent speed" 「speed」を回転角速度(deg)に変換する係数
             radPerSecPerPercentSpeed       = degPerSecPerPercentSpeed * radiansPerDegree   # Convert this number to the speed in rad/s per "percent speed" 「speed」を回転角速度(rad)に変換する係数
 
-            # The rate at which we'll update the gyro offset (precise definition given in docs) ジャイロ値を補正するオフセット値の更新に使用する。0.00001745
+            # The rate at which we'll update the gyro offset (precise definition given in docs) ジャイロ値を補正するオフセット値の更新に使用する。調節する必要がある。
             gyroDriftCompensationRate      = 0.1 * loopTimeSec * radiansPerSecondPerRawGyroUnit
 
             # A deque (a fifo array) which we'll use to keep track of previous motor positions, which we can use to calculate the rate of change (speed)
@@ -232,8 +232,8 @@ class GyroBalancer(Tank):
             battery_gain = 0.001089  # PWM出力算出用バッテリ電圧補正係数
             battery_offset = 0.625  # PWM出力算出用バッテリ電圧補正オフセット
 
-            a_d = 1.0 - 0.51 #0.39 #0.47  # ローパスフィルタ係数(左右車輪の平均回転角度用)
-            a_r = 0.985 #0.98  # ローパスフィルタ係数(左右車輪の目標平均回転角度用)
+            a_d = 1.0 - 0.51 #0.47  # ローパスフィルタ係数(左右車輪の平均回転角度用)。左右モーターの平均回転角速度(rad/sec)の算出時にのみ使用する。小さいほど角速度の変化に過敏になる。0.45〜0.60あたりで調節したい。
+            a_r = 0.985 #0.98  # ローパスフィルタ係数(左右車輪の目標平均回転角度用)。左右モーターの目標平均回転角度(rad)の算出時に使用する。小さいほど前進・後退する反応が早くなる。
 
             # Variables representing physical signals (more info on these in the docs)
             # The angle of "the motor", measured in raw units (degrees for the
@@ -365,7 +365,7 @@ class GyroBalancer(Tank):
                 ##  Reading the Motor Position
                 ###############################################################
                 motorAngleLast = motorAngle
-                motorAngleRaw = (FastRead(motorEncoderLeft) + FastRead(motorEncoderRight))/2.0
+                motorAngleRaw = (FastRead(motorEncoderLeft) + FastRead(motorEncoderRight)) * 0.5
                 motorAngle = (motorAngleRaw * radiansPerRawMotorUnit) + gyroEstimatedAngle # 左右モーターの現在の平均回転角度(rad) + 躯体の(推定)回転角度
 
                 #motorAngularSpeedReference = self.speed * radPerSecPerPercentSpeed # 左右モーターの目標平均回転角速度(rad/sec)。入力値speedを角速度(rad)に変換したもの。
@@ -378,7 +378,7 @@ class GyroBalancer(Tank):
                 ##  Computing Motor Speed
                 ###############################################################
                 #motorAngularSpeed = (motorAngle - motorAngleHistory[0])/(motorAngleHistoryLength * loopTimeSec) # 左右モーターの平均回転角速度(rad/sec)。３代前の左右モーターの平均回転角度と現在の平均回転角度の差分を、周期*3で割ったもの
-                motorAngularSpeed = (((1.0 - a_d) * motorAngle) + (a_d * motorAngleLast) - motorAngleLast) / loopTimeSec # ローパスフィルター係数を利用
+                motorAngularSpeed = (((1.0 - a_d) * motorAngle) + (a_d * motorAngleLast) - motorAngleLast) / loopTimeSec # 左右モーターの平均回転角速度(rad/sec)。左右モーターの現在平均回転角度をローパスフィルターに通して、前回の平均回転角度との差分を周期で割っている。
                 motorAngularSpeedError = motorAngularSpeed - motorAngularSpeedReference # 左右モーターの現在の平均回転角速度と目標平均回転角速度との誤差(rad/sec)
                 #motorAngleHistory.append(motorAngle) # 左右モーターの現在の平均回転角度を記録
 
@@ -397,12 +397,6 @@ class GyroBalancer(Tank):
                                + (gainMotorAngleErrorAccumulated * motorAngleErrorAccumulated))/
                                 (battery_gain * voltageRaw - battery_offset)) * 100000
 
-                # motorDutyCycle =(gainGyroAngle  * gyroEstimatedAngle
-                #                + gainGyroRate   * gyroRate
-                #                + gainMotorAngle * motorAngleError
-                #                + gainMotorAngularSpeed * motorAngularSpeedError
-                #                + gainMotorAngleErrorAccumulated * motorAngleErrorAccumulated)
-
                 ###############################################################
                 ##  Apply the signal to the motor, and add steering
                 ###############################################################
@@ -413,7 +407,7 @@ class GyroBalancer(Tank):
                 ##  Update angle estimate and Gyro Offset Estimate
                 ###############################################################
                 gyroEstimatedAngle = gyroEstimatedAngle + (gyroRate * loopTimeSec) # 次回の躯体の（推定）回転角度(rad)
-                gyroOffset = ((1 - gyroDriftCompensationRate) * gyroOffset) + (gyroDriftCompensationRate * gyroRateRaw) # ジャイロの角速度を補正するオフセット値の更新。(rad/sec) ほぼほぼ前回算出したオフセット値寄りになる
+                gyroOffset = ((1 - gyroDriftCompensationRate) * gyroOffset) + (gyroDriftCompensationRate * gyroRateRaw) # ジャイロの角速度を補正するオフセット値(rad/sec)の更新。 現状gyroDriftCompensationRateが極小なので、ほぼほぼ前回算出したオフセット値寄りになる
 
                 ###############################################################
                 ##  Update Accumulated Motor Error
