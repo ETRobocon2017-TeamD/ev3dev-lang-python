@@ -341,8 +341,8 @@ class GyroBalancer(Tank):
             # Initial touch sensor value
             touchSensorPressed = FastRead(touchSensorValueRaw)
 
-            #while not touchSensorPressed:
-            while ( gyroRate < 4 ):
+            while not touchSensorPressed:
+            #while ((gyroRate < 5) and (gyroRate > -5)):
             #for _ in range(1000):
 
                 ###############################################################
@@ -422,10 +422,15 @@ class GyroBalancer(Tank):
                 ###############################################################
                 ##  Read the touch sensor (the kill switch)
                 ###############################################################
-                #touchSensorPressed = FastRead(touchSensorValueRaw)
+                touchSensorPressed = FastRead(touchSensorValueRaw)
 
-                # 実行時間をログに出力
-                logs[log_pointer] = "%s, %s, %s, %s" % ((time.clock() - tLoopStart), motorAngleError, motorAngularSpeedError, motorAngleErrorAccumulated)
+                # 実行時間、PWM値(duty cycle value)に関わる値をログに出力
+                logs[log_pointer] = "%s, %s, %s, %s, %s, %s" % ((time.clock() - tLoopStart),
+                    gainGyroAngle  * gyroEstimatedAngle,
+                    gainGyroRate   * gyroRate,
+                    gainMotorAngle * motorAngleError,
+                    gainMotorAngularSpeed * motorAngularSpeedError,
+                    gainMotorAngleErrorAccumulated * motorAngleErrorAccumulated)
                 log_pointer += 1
 
                 ###############################################################
