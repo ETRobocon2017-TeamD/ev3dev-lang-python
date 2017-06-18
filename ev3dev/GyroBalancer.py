@@ -329,6 +329,9 @@ class GyroBalancer(Tank):
             print("GO!")
             print("-----------------------------------")
 
+            #self.speed = 62.5 # 前進・後退速度。62.5〜-62.5の間で入力
+            #self.steering = -1 * self.STEER_SPEED # 旋回速度。今の値が安定しているが、もう少し大きくしてもいいかも？
+
             ########################################################################
             ##
             ## MAIN LOOP (Press Touch Sensor to stop the program)
