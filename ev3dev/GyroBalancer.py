@@ -405,8 +405,8 @@ class GyroBalancer(Tank):
                 ###############################################################
                 ##  Apply the signal to the motor, and add steering
                 ###############################################################
-                SetDuty(motorDutyCycleRight, motorDutyCycle + self.steering, 0.97)
-                SetDuty(motorDutyCycleLeft, motorDutyCycle - self.steering)
+                SetDuty(motorDutyCycleRight, motorDutyCycle + self.steering)
+                SetDuty(motorDutyCycleLeft, motorDutyCycle - self.steering, 0.98) # 右車輪のモーター出力が弱いので、左車輪のPWM値を3つ目の引数で調節(%)してる。まだ偏ってるので調節必要
 
                 ###############################################################
                 ##  Update angle estimate and Gyro Offset Estimate
